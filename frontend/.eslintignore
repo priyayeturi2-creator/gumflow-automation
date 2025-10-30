@@ -1,0 +1,18 @@
+# Dependencies
+node_modules
+dist
+
+# Build outputs
+build
+coverage
+
+# Configuration files
+vite.config.ts
+*.config.js
+
+# Environment files
+.env*
+
+# Misc
+.DS_Store
+*.log

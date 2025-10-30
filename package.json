@@ -1,0 +1,8 @@
+{
+  "name": "gumflow-automation",
+  "version": "1.0.0",
+  "description": "AI-powered document automation platform",
+  "dependencies": {
+    "react-markdown": "^10.1.0"
+  }
+}
