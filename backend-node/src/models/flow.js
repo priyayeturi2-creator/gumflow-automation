@@ -16,6 +16,10 @@ const flowSchema = new mongoose.Schema({
         required: true,
         trim: true
     },
+    deep_research: {
+        type: String,
+        default: ''
+    },
     interview_transcript: {
         type: String,
         default: ''

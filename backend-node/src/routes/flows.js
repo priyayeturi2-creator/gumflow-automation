@@ -51,22 +51,13 @@ router.get('/list-workbooks', apiLimiter, auth, asyncHandler(async (req, res) =>
  * @param {FlowData} req.body - Flow creation data
  * @returns {Object} Created flow with Gumloop response
  */
-router.post('/create', 
+router.post('/create',
     flowCreationLimiter,
-    auth, 
+    auth,
     validateFlowCreation,
     handleValidationErrors,
     asyncHandler(async (req, res) => {
         const { founder_name, company_name, interview_transcript, tone } = req.body;
-
-        console.log('Flow creation attempt:', { 
-            userId: req.user.userId,
-            founder_name,
-            company_name,
-            tone,
-            transcript_length: interview_transcript.length,
-            timestamp: new Date().toISOString()
-        });
 
         // Create flow with Gumloop API
         const gumloopData = await makeGumloopRequest('start_pipeline', {
@@ -90,12 +81,7 @@ router.post('/create',
 
         await flow.save();
 
-        console.log('Flow created successfully:', { 
-            flowId: flow._id,
-            userId: req.user.userId,
-            gumloopRunId: gumloopData.run_id,
-            timestamp: new Date().toISOString()
-        });
+        console.log('Flow created successfully');
 
         res.status(201).json({
             id: flow._id,
@@ -115,18 +101,14 @@ router.post('/create',
  * @access Private
  * @returns {Array} List of user's flows
  */
-router.get('/', 
+router.get('/',
     apiLimiter,
-    auth, 
+    auth,
     asyncHandler(async (req, res) => {
         const flows = await Flow.find({ userId: new ObjectId(req.user.userId) })
             .sort({ createdAt: -1 });
 
-        console.log('Flows retrieved:', { 
-            userId: req.user.userId,
-            flowCount: flows.length,
-            timestamp: new Date().toISOString()
-        });
+        console.log('Flows retrieved');
 
         res.json(flows);
     })
@@ -139,25 +121,90 @@ router.get('/',
  * @param {string} req.params.runId - Run ID to fetch details for
  * @returns {Object} Run details from Gumloop
  */
-router.get('/:runId', 
+router.get('/:runId',
     apiLimiter,
-    auth, 
+    auth,
     asyncHandler(async (req, res) => {
         const { runId } = req.params;
 
-        console.log('Automation run details requested:', { 
-            runId,
-            userId: req.user.userId,
-            timestamp: new Date().toISOString()
-        });
+        console.log('Automation run details requested');
 
         const data = await makeGumloopRequest('get_pl_run', {
             params: { run_id: runId }
         });
-        
+
+        // Find the flow document
+        const flow = await Flow.findOne({
+            userId: new ObjectId(req.user.userId),
+            'gumloopResponse.run_id': runId
+        });
+
+        const runnerArray = data.log?.filter((value) => value.indexOf("__TRIGGERED_PIPELINE__") > 0);
+
+        const newLogs = [];
+        runnerArray?.forEach((run) => {
+            let ro = run.replace("__system__: __TRIGGERED_PIPELINE__  ", "")
+            let roAry = ro.split("', '");
+            roAry[0] = roAry[0].replace('{', '')
+            roAry[6] = roAry[6]?.replace('}', '')
+            roAry[7] = roAry[7]?.replace('}', '')
+            let res = {};
+            roAry.forEach(o => { res[o?.split("': '")[0]?.replace(/'/g, "")] = o?.split("': '")[1]?.replace(/'/g, "") || null })
+            newLogs.push(res)
+        });
+
+        const subflowVersion = []
+
+        const workbookList = await makeGumloopRequest('list_saved_items');
+
+        newLogs.forEach(log => {
+            if (flow.subflowVersion.some(version => version.run_id === log.runId) === false) {
+                subflowVersion.push({
+                    run_id: log.runId,
+                    saved_item_id: log.pipelineId,
+                    url: data.url || 'sda',
+                    workbook_id: workbookList.saved_items.find(workbook => workbook.name === log.pipelineLabel)?.saved_item_id || '',
+                    selected: false
+                });
+            }
+        });
+
+        // Update flow with new version
+        await flow.updateOne({
+            deep_research: data.outputs["deep research"] || "",
+            subflowVersion: [...flow.subflowVersion, ...subflowVersion]
+        });
+
+
         res.json(data);
     })
 );
+
+
+/**
+ * Get automation run details
+ * @route GET /flows/:runId
+ * @access Private
+ * @param {string} req.params.runId - Run ID to fetch details for
+ * @returns {Object} Run details from Gumloop
+ */
+router.get('/version/:runId',
+    apiLimiter,
+    auth,
+    asyncHandler(async (req, res) => {
+        const { runId } = req.params;
+
+        console.log('Automation run details requested');
+
+        const data = await makeGumloopRequest('get_pl_run', {
+            params: { run_id: runId }
+        });
+
+
+        res.json(data);
+    })
+);
+
 
 /**
  * Mark a subflow version as selected
@@ -169,57 +216,57 @@ router.get('/:runId',
  * @param {string} req.body.workbookId - Workbook ID
  * @returns {Object} Success message
  */
-router.post('/select-version', 
+router.post('/select-version',
     apiLimiter,
-    auth, 
+    auth,
     validateVersionSelection,
     handleValidationErrors,
     asyncHandler(async (req, res) => {
         const { runId, selectedVersionRunId, workbookId } = req.body;
 
-      try {
-        // Find the flow document
-        const flow = await Flow.findOne({
-            userId: new ObjectId(req.user.userId),
-            'gumloopResponse.run_id': runId
-        });
+        try {
+            // Find the flow document
+            const flow = await Flow.findOne({
+                userId: new ObjectId(req.user.userId),
+                'gumloopResponse.run_id': runId
+            });
 
-        if (!flow) {
-            return res.status(404).json({ message: 'Flow not found' });
-        }
+            if (!flow) {
+                return res.status(404).json({ message: 'Flow not found' });
+            }
 
-        // Unselect all versions for this workbook
-        await Flow.updateOne(
-            { _id: flow._id },
-            { 
-                $set: { 
-                    "subflowVersion.$[elem].selected": false 
+            // Unselect all versions for this workbook
+            await Flow.updateOne(
+                { _id: flow._id },
+                {
+                    $set: {
+                        "subflowVersion.$[elem].selected": false
+                    }
+                },
+                {
+                    arrayFilters: [{ "elem.saved_item_id": workbookId }],
+                    multi: true
                 }
-            },
-            {
-                arrayFilters: [{ "elem.saved_item_id": workbookId }],
-                multi: true
-            }
-        );
+            );
 
-        // Select the specific version
-        await Flow.updateOne(
-            { 
-                _id: flow._id,
-                "subflowVersion.run_id": selectedVersionRunId
-            },
-            { 
-                $set: { "subflowVersion.$.selected": true }
-            }
-        );
+            // Select the specific version
+            await Flow.updateOne(
+                {
+                    _id: flow._id,
+                    "subflowVersion.run_id": selectedVersionRunId
+                },
+                {
+                    $set: { "subflowVersion.$.selected": true }
+                }
+            );
 
-        res.json({ 
-            message: `Version selected successfully`,
-            selectedVersionId: selectedVersionRunId
-        });
+            res.json({
+                message: `Version selected successfully`,
+                selectedVersionId: selectedVersionRunId
+            });
         } catch (error) {
-          console.error('Error selecting version:', { error });
-          res.status(500).json({ message: 'Error selecting version' });
+            console.error('Error selecting version');
+            res.status(500).json({ message: 'Error selecting version' });
         }
     })
 );
@@ -233,23 +280,18 @@ router.post('/select-version',
  * @param {string} req.body.runId - Original run ID
  * @returns {Object} New generated version data
  */
-router.post('/regenerate/:savedRunId', 
+router.post('/regenerate/:savedRunId',
     flowCreationLimiter,
-    auth, 
+    auth,
     asyncHandler(async (req, res) => {
         const { savedRunId } = req.params;
 
-        console.log('Workbook regeneration attempt:', { 
-            savedRunId,
-            runId: req.body.runId,
-            userId: req.user.userId,
-            timestamp: new Date().toISOString()
-        });
-        
+        console.log('Workbook regeneration attempt');
+
         // Find the original flow
-        const flow = await Flow.findOne({ 
-            userId: new ObjectId(req.user.userId), 
-            'gumloopResponse.run_id': req.body.runId 
+        const flow = await Flow.findOne({
+            userId: new ObjectId(req.user.userId),
+            'gumloopResponse.run_id': req.body.runId
         });
 
         if (!flow) {
@@ -262,6 +304,7 @@ router.post('/regenerate/:savedRunId',
             body: {
                 founder_name: flow.founder_name,
                 company_name: flow.company_name,
+                deep_research: flow.deep_research || "",
                 interview_transcript: flow.interview_transcript,
                 tone: flow.tone
             },
@@ -269,16 +312,11 @@ router.post('/regenerate/:savedRunId',
         });
 
         // Update flow with new version
-        await flow.updateOne({ 
-            subflowVersion: [...flow.subflowVersion, regeneratedResponse] 
+        await flow.updateOne({
+            subflowVersion: [...flow.subflowVersion, regeneratedResponse]
         });
 
-        console.log('Workbook regenerated successfully:', { 
-            savedRunId,
-            newRunId: regeneratedResponse.run_id,
-            userId: req.user.userId,
-            timestamp: new Date().toISOString()
-        });
+        console.log('Workbook regenerated successfully');
 
         res.status(201).json({
             gumloopResponse: regeneratedResponse
@@ -321,7 +359,7 @@ router.get('/combined-report/:runId', auth, async (req, res) => {
                 const data = await makeGumloopRequest('get_pl_run', {
                     params: { run_id: version.run_id }
                 });
-                
+
                 // Get the first output value
                 if (data.outputs && typeof data.outputs === 'object') {
                     const firstOutputValue = Object.values(data.outputs)[0];
@@ -334,7 +372,7 @@ router.get('/combined-report/:runId', auth, async (req, res) => {
                     }
                 }
             } catch (error) {
-                console.error(`Error fetching output for run_id ${version.run_id}:`, error);
+                console.error('Error fetching output for run_id');
                 // Continue with other versions even if one fails
             }
         }
@@ -353,7 +391,7 @@ router.get('/combined-report/:runId', auth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Get combined report error:', error);
+        console.error('Get combined report error');
         res.status(500).json({ message: 'Failed to generate combined report' });
     }
 });
@@ -388,7 +426,7 @@ router.get('/subflow-versions/:runId', auth, async (req, res) => {
             versions: subflowVersions
         });
     } catch (error) {
-        console.error('Get subflow versions error:', error);
+        console.error('Get subflow versions error');
         res.status(500).json({ message: 'Failed to fetch subflow versions' });
     }
 });

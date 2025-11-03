@@ -63,7 +63,7 @@ const Header = ({ showNavigation = true }: HeaderProps) => {
             textAlign: 'left'
           }}
         >
-          GumFlow
+          Automations
         </Typography>
         {showNavigation && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

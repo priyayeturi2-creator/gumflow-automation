@@ -62,8 +62,9 @@ const validateFlowCreation = [
     .withMessage('Company name contains invalid characters')
     .escape(),
   body('interview_transcript')
+    .optional()
     .trim()
-    .isLength({ min: 10, max: 10000 })
+    .isLength({ min: 10, max: 10000000 })
     .withMessage('Interview transcript must be between 10 and 10,000 characters')
     .escape(),
   body('tone')

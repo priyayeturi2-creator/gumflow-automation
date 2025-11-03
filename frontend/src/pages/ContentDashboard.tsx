@@ -1,5 +1,5 @@
 // Moving content from Dashboard.tsx to ContentDashboard.tsx
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     Container,
@@ -34,13 +34,12 @@ interface FlowForm {
     tone: string;
 }
 
-const TONE_OPTIONS = [
-    'Professional',
-    'Casual',
-    'Friendly',
-    'Technical',
-    'Enthusiastic'
-];
+interface FormErrors {
+    founder_name: string;
+    company_name: string;
+    interview_transcript: string;
+    tone: string;
+}
 
 interface GumloopResponse {
     url: string;
@@ -78,12 +77,37 @@ const ContentDashboard = () => {
     const [logs, setLogs] = useState<Array<Log>>([]);
     const [refreshingStatus, setRefreshingStatus] = useState(false);
     const [subFlowOutput, setSubFlowOutput] = useState<{[key: string]: any}>({});
+    const [fileContent, setFileContent] = useState('');
+    const initialized = useRef(false);
     const [formData, setFormData] = useState<FlowForm>({
         founder_name: '',
         company_name: '',
         interview_transcript: '',
         tone: ''
     });
+
+    const [formErrors, setFormErrors] = useState<FormErrors>({
+        founder_name: '',
+        company_name: '',
+        interview_transcript: '',
+        tone: ''
+    });
+
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+
+        reader.onload = (e: ProgressEvent<FileReader>) => {
+          const content = e.target?.result;
+          if (typeof content === 'string') {
+            setFileContent(content); // Update state with file content
+          }
+        };
+
+        reader.readAsText(file); // Read the file as text
+        }
+      };
 
     const handleRefreshStatus = async () => {
         if (!runId) return;
@@ -156,6 +180,8 @@ const ContentDashboard = () => {
         }
 
         const fetchData = async () => {
+             if (!initialized.current) {
+        initialized.current = true;
             try {
                 await apiService.auth.getMe();
                 // Only call handleRefreshStatus if we have a runId
@@ -168,6 +194,7 @@ const ContentDashboard = () => {
             } finally {
                 setLoading(false);
             }
+        }
         };
 
         fetchData();
@@ -185,6 +212,84 @@ const ContentDashboard = () => {
             interview_transcript: '',
             tone: ''
         });
+        setFormErrors({
+            founder_name: '',
+            company_name: '',
+            interview_transcript: '',
+            tone: ''
+        });
+    };
+
+    const validateField = (name: string, value: string): string => {
+        switch (name) {
+            case 'founder_name':
+                if (!value.trim()) {
+                    return 'Founder name is required';
+                }
+                if (value.trim().length < 2) {
+                    return 'Founder name must be at least 2 characters';
+                }
+                if (value.trim().length > 50) {
+                    return 'Founder name must be less than 50 characters';
+                }
+                if (!/^[a-zA-Z\s'-]+$/.test(value.trim())) {
+                    return 'Founder name can only contain letters, spaces, hyphens, and apostrophes';
+                }
+                return '';
+            
+            case 'company_name':
+                if (!value.trim()) {
+                    return 'Company name is required';
+                }
+                if (value.trim().length < 2) {
+                    return 'Company name must be at least 2 characters';
+                }
+                if (value.trim().length > 100) {
+                    return 'Company name must be less than 100 characters';
+                }
+                return '';
+            
+            case 'interview_transcript':
+                // No validation for interview transcript
+                return '';
+            
+            case 'tone':
+                if (!value) {
+                    return 'Please enter a tone';
+                }
+                if (value.trim().length < 2) {
+                    return 'Please enter a valid tone';
+                }
+                return '';
+            
+            default:
+                return '';
+        }
+    };
+
+    const validateForm = (): boolean => {
+        const errors: FormErrors = {
+            founder_name: validateField('founder_name', formData.founder_name),
+            company_name: validateField('company_name', formData.company_name),
+            interview_transcript: validateField('interview_transcript', formData.interview_transcript),
+            tone: validateField('tone', formData.tone)
+        };
+
+        setFormErrors(errors);
+
+        // Check if there are any errors
+        return !Object.values(errors).some(error => error !== '');
+    };
+
+    const isFormValid = (): boolean => {
+        // Check if all required fields are filled and have no errors
+        const hasRequiredFields = !!(formData.founder_name.trim() && 
+                                    formData.company_name.trim() && 
+                                    formData.tone);
+        
+        const hasNoErrors = !Object.values(formErrors).some(error => error !== '');
+        
+        return hasRequiredFields && hasNoErrors;
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -193,9 +298,32 @@ const ContentDashboard = () => {
             ...prev,
             [name]: value
         }));
+
+        // Clear the error for this field when user starts typing
+        if (formErrors[name as keyof FormErrors]) {
+            setFormErrors(prev => ({
+                ...prev,
+                [name]: ''
+            }));
+        }
+
+        // Real-time validation for immediate feedback
+        const fieldError = validateField(name, value);
+        if (fieldError) {
+            setFormErrors(prev => ({
+                ...prev,
+                [name]: fieldError
+            }));
+        }
     };
 
     const handleCreateFlow = async () => {
+        // Validate the form first
+        if (!validateForm()) {
+            setError('Please fix the validation errors before submitting');
+            return;
+        }
+
         // For regeneration, we only require founder_name and company_name
         if (!formData.founder_name || !formData.company_name) {
             setError('Company and founder names are required');
@@ -205,7 +333,7 @@ const ContentDashboard = () => {
         // Set default values for optional fields
         const flowDataToSubmit = {
             ...formData,
-            interview_transcript: formData.interview_transcript || '',
+            interview_transcript: fileContent ||formData.interview_transcript,
             tone: formData.tone || 'Professional'
         };
 
@@ -342,6 +470,8 @@ const ContentDashboard = () => {
                                     fullWidth
                                     required
                                     variant="outlined"
+                                    error={!!formErrors.founder_name}
+                                    helperText={formErrors.founder_name || 'Enter the founder\'s full name (2-50 characters)'}
                                 />
                                 <TextField
                                     name="company_name"
@@ -351,17 +481,21 @@ const ContentDashboard = () => {
                                     fullWidth
                                     required
                                     variant="outlined"
+                                    error={!!formErrors.company_name}
+                                    helperText={formErrors.company_name || 'Enter the company name (2-100 characters)'}
                                 />
+                                <input type="file" onChange={handleFileChange} />
                                 <TextField
                                     name="interview_transcript"
                                     label="Interview Transcript"
-                                    value={formData.interview_transcript}
+                                    value={fileContent || formData.interview_transcript}
                                     onChange={handleInputChange}
                                     fullWidth
-                                    required
                                     multiline
                                     rows={6}
                                     variant="outlined"
+                                    error={!!formErrors.interview_transcript}
+                                    helperText={formErrors.interview_transcript || `Enter the interview transcript (optional). Current: ${(fileContent || formData.interview_transcript).length} characters`}
                                 />
                                 <TextField
                                     name="tone"
@@ -370,15 +504,11 @@ const ContentDashboard = () => {
                                     onChange={handleInputChange}
                                     fullWidth
                                     required
-                                    select
                                     variant="outlined"
-                                >
-                                    {TONE_OPTIONS.map((tone) => (
-                                        <MenuItem key={tone} value={tone}>
-                                            {tone}
-                                        </MenuItem>
-                                    ))}
-                                </TextField>
+                                    error={!!formErrors.tone}
+                                    helperText={formErrors.tone || 'Enter the desired tone for the content'}
+                                />
+                                   
                             </Box>
                         </DialogContent>
                         <DialogActions sx={{ p: 2, bgcolor: 'grey.50' }}>
@@ -391,7 +521,7 @@ const ContentDashboard = () => {
                             <Button
                                 onClick={handleCreateFlow}
                                 variant="contained"
-                                disabled={flowLoading}
+                                disabled={flowLoading || !isFormValid()}
                                 sx={{
                                     textTransform: 'none',
                                     px: 3

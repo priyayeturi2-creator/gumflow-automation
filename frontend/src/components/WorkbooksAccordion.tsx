@@ -3,7 +3,7 @@
  * @description Component for managing workbook versions, selections, and approvals
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Accordion,
   AccordionSummary,
@@ -26,7 +26,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 import DownloadIcon from '@mui/icons-material/Download';
 import Markdown from 'react-markdown';
 import { apiService, getErrorMessage } from '../services/apiService';
-
+import remarkGfm from 'remark-gfm'
 /**
  * @typedef {'RUNNING' | 'COMPLETED' | 'FAILED' | 'DONE' | 'APPROVED'} RunState
  */
@@ -116,9 +116,11 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
   const [loadingContent, setLoadingContent] = useState<string | null>(null);
   const [approvingVersion, setApprovingVersion] = useState<string | null>(null);
   const [downloadingReport, setDownloadingReport] = useState(false);
-
+const initialized = useRef(false);
   useEffect(() => {
     const fetchWorkbooks = async () => {
+       if (!initialized.current) {
+        initialized.current = true;
       try {
         const response = await apiService.flows.getWorkbooks();
         setWorkbooks(response.data.saved_items || []);
@@ -128,6 +130,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
       } finally {
         setLoading(false);
       }
+    }
     };
 
     fetchWorkbooks();
@@ -189,7 +192,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
         
         if (selectedVersion) {
           // If there's a selected version, fetch its content
-          const response = await apiService.flows.getById(selectedVersion.run_id);
+          const response = await apiService.flows.getVersionById(selectedVersion.run_id);
 
           const outputs = response.data.outputs || {};
           const firstOutputValue = Object.values(outputs)[0] || '';
@@ -199,7 +202,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
             if (workbookName) {
               setSubFlowOutput(prev => ({
                 ...(prev || {}),
-                [`${workbookName} output`]: firstOutputValue
+                [`${workbookName.trim()} output`]: firstOutputValue
               }));
             }
           }
@@ -218,7 +221,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
     
     try {
       // Get the details of the selected version
-      const selectedVersion = await apiService.flows.getById(selectedVersionRunId);
+      const selectedVersion = await apiService.flows.getVersionById(selectedVersionRunId);
 
       console.log('Selected Subflow Version:', selectedVersion.data);
 
@@ -247,7 +250,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
           try {
             setSubFlowOutput(prev => ({
               ...(prev || {}),
-              [`${workbookName} output`]: firstOutputValue
+              [`${workbookName.trim()} output`]: firstOutputValue
             }));
           } catch (error) {
             console.error('Error updating subflow output:', error);
@@ -350,7 +353,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
       }
 
       // Create formatted report content
-      const reportHeader = `# Workbook Report\n\nGenerated on: ${new Date().toLocaleDateString()}\nRun ID: ${runId}\n\n---\n\n`;
+     // const reportHeader = `# Workbook Report\n\nGenerated on: ${new Date().toLocaleDateString()}\nRun ID: ${runId}\n\n---\n\n`;
       
       // Format individual outputs with workbook names
       const formattedContent = individualOutputs
@@ -361,7 +364,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
         })
         .join('');
 
-      const finalContent = reportHeader + formattedContent;
+      const finalContent = formattedContent;
 
       // Create and download the file
       const blob = new Blob([finalContent], { type: 'text/markdown' });
@@ -376,7 +379,7 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
 
     } catch (err: any) {
       console.error('Error downloading report:', err);
-      setError(getErrorMessage(err));
+      alert(getErrorMessage(err));
     } finally {
       setDownloadingReport(false);
     }
@@ -502,8 +505,8 @@ const WorkbooksAccordion: React.FC<WorkbooksAccordionProps> = ({
                     </Box>
                   ) : workbookLog?.outputs ? (
                     <div className="markdown-content">
-                      <Markdown>
-                        {subFlowOutput[`${workbook.name} output`] || ''}
+                      <Markdown remarkPlugins={[remarkGfm]}>
+                        {subFlowOutput[`${workbook.name.trim()} output`] || `${workbook.name.trim()} output`}
                       </Markdown>
                     </div>
                   ) : (

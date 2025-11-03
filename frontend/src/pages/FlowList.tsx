@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Container,
@@ -36,7 +36,7 @@ const FlowList = () => {
     const [flows, setFlows] = useState<Flow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
+const initialized = useRef(false);
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -45,6 +45,8 @@ const FlowList = () => {
         }
 
         const fetchFlows = async () => {
+            if (!initialized.current) {
+        initialized.current = true;
             try {
                 const response = await axios.get('http://localhost:5000/api/flows', {
                     headers: { Authorization: `Bearer ${token}` }
@@ -58,6 +60,7 @@ const FlowList = () => {
                 }
             } finally {
                 setLoading(false);
+            }
             }
         };
 

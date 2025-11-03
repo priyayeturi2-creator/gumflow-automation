@@ -33,6 +33,7 @@ export const API_ENDPOINTS = {
     COMBINED_REPORT: (runId: string) => `/flows/combined-report/${runId}`,
     SUBFLOW_VERSIONS: (runId: string) => `/flows/subflow-versions/${runId}`,
     BY_ID: (runId: string) => `/flows/${runId}`,
+    VERSION_ID: (runId: string) => `/flows/version/${runId}`,
   },
 };
 
@@ -122,6 +123,13 @@ export const apiService = {
      */
     getById: (runId: string): Promise<AxiosResponse<any>> => 
       apiClient.get(API_ENDPOINTS.FLOWS.BY_ID(runId)),
+
+    /**
+     * Get flow version by ID
+     */
+    getVersionById: (runId: string): Promise<AxiosResponse<any>> => 
+      apiClient.get(API_ENDPOINTS.FLOWS.VERSION_ID(runId)),
+    
     
     /**
      * Create new flow
